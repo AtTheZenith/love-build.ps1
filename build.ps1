@@ -1,4 +1,4 @@
-# version 0.2.0
+# Version 1.0.0
 
 # -------------------
 # Configuration
@@ -139,6 +139,7 @@ if ($buildWindows) {
     }
     $releaseZip.Dispose()
     Write-Host "[SUCCESS] Created Windows release ZIP: $zipName"
+    Write-Host "[SUCCESS] Finished Windows build."
 } else {
     Write-Warning "[WARN] Windows build skipped due to missing files."
 }
@@ -147,5 +148,41 @@ if ($buildWindows) {
 # Build Linux
 # -------------------
 if ($buildLinux) {
-    Write-Host "[INFO] Linux build not yet implemented"
+    Write-Host "[INFO] Starting Linux build..."
+
+    $linuxBinary = $binaries["linux"]
+    if (!(Test-Path $linuxBinary)) {
+        Write-Warning "[ERROR] Missing Linux AppImage binary: $linuxBinary"
+        $buildLinux = $false
+    }
+}
+
+if ($buildLinux) {
+    # Clear previous Linux AppImage
+    $filePath = Join-Path $releaseFolder "$appName.AppImage"
+    if (Test-Path $filePath) {
+        Remove-Item $filePath -Force 
+        Write-Host "[INFO] Cleared Previous Linux build."
+    }
+
+    # Copy AppImage to release folder (treat as standalone executable like love.exe)
+    Copy-Item $linuxBinary -Destination $filePath -Force
+    Write-Host "[INFO] Copied $appName.AppImage to $releaseFolder"
+
+    # Append game.love to the AppImage (in-place, no ZIP)
+    $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
+    $gameBytes = [System.IO.File]::ReadAllBytes($loveZip)
+    [System.IO.File]::WriteAllBytes($appImageDest, $fileBytes + $gameBytes)
+    Write-Host "[SUCCESS] Appended $appName.love to $filePath"
+
+    # Try to set executable bit on Linux only
+    if ($IsLinux)  {
+        if (Get-Command chmod -ErrorAction SilentlyContinue) {
+            & chmod +x $appImageDest
+        }
+    }
+
+    Write-Host "[SUCCESS] Finished Linux build."
+} else {
+    Write-Warning "[WARN] Linux build skipped due to missing files."
 }

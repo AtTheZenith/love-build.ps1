@@ -1,4 +1,4 @@
-# Version 1.0.0
+# Version 1.0.1
 
 # -------------------
 # Configuration
@@ -93,6 +93,7 @@ if ($buildWindows) {
         $filePath = Join-Path $windowsBinaries $file
         if (!(Test-Path $filePath)) {
             Write-Warning "[ERROR] Missing required Windows file: $file"
+            Write-Warning "[WARN] Windows build skipped due to missing files."
             $buildWindows = $false
         }
     }
@@ -141,7 +142,6 @@ if ($buildWindows) {
     Write-Host "[SUCCESS] Created Windows release ZIP: $zipName"
     Write-Host "[SUCCESS] Finished Windows build."
 } else {
-    Write-Warning "[WARN] Windows build skipped due to missing files."
 }
 
 # -------------------
@@ -153,6 +153,7 @@ if ($buildLinux) {
     $linuxBinary = $binaries["linux"]
     if (!(Test-Path $linuxBinary)) {
         Write-Warning "[ERROR] Missing Linux AppImage binary: $linuxBinary"
+        Write-Warning "[WARN] Linux build skipped due to missing files."
         $buildLinux = $false
     }
 }
@@ -183,6 +184,4 @@ if ($buildLinux) {
     }
 
     Write-Host "[SUCCESS] Finished Linux build."
-} else {
-    Write-Warning "[WARN] Linux build skipped due to missing files."
 }

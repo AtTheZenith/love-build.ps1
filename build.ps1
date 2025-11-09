@@ -1,4 +1,4 @@
-# Version 1.0.1
+# Version 1.1.0
 
 # -------------------
 # Configuration
@@ -12,6 +12,7 @@ $releaseFolder = Join-Path $buildFolder "release"
 $loveZip = Join-Path $releaseFolder "${appName}.love"
 
 $love2dVersion = "11.5"
+$bit = "64"
 $buildWindows = $true
 $buildLinux = $true
 
@@ -23,20 +24,23 @@ $windowsRequiredFiles = @(
 )
 
 # OS-specific binary paths
-$basePath = Join-Path $versionsFolder $love2dVersion
+$basePath = Join-Path $versionsFolder "$love2dVersion/x$bit"
 $binaries = @{
     "windows" = Join-Path $basePath "windows"
     "linux"   = Join-Path $basePath "linux.AppImage"
 }
 
-Write-Host "[INFO] Starting build for LÖVE version $love2dVersion"
+Write-Host "[INFO] Starting build for LOVE version $love2dVersion ($bit-bit)"
 Write-Host "[INFO] Windows: $buildWindows, Linux: $buildLinux"
 
 # -------------------
 # Helper Functions
 # -------------------
-function appendGameToFile($filePath, $releaseFolder, $name) {
-    $outPath = Join-Path $releaseFolder "$name.exe"
+function appendGameToFile($filePath, $outputFolder, $name) {
+    # Debug info
+    # Write-Host "$filePath, $releaseFolder, $name"
+
+    $outPath = Join-Path $outputFolder "$name"
     Write-Host "[INFO] Processing $outPath"
 
     $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
@@ -117,30 +121,38 @@ if ($buildWindows) {
     foreach ($exe in $exeFiles) {
         $exePath = Join-Path $windowsBinaries $exe
         if (Test-Path $exePath) {
-            $outputName = if ($exe -eq "lovec.exe") { "$appName-debug" } else { $appName }
+            $outputName = if ($exe -eq "lovec.exe") { "$appName-debug.exe" } else { "$appName.exe" }
             appendGameToFile $exePath $folder $outputName
         } else {
             Write-Warning "[WARN] $exe not found in $windowsBinaries, skipping."
         }
     }
 
-    Write-Host "[SUCCESS] Windows build complete"
+    Write-Host "[INFO] Finished Windows build."
 
     # Create release ZIP
     Write-Host "[INFO] Creating Windows release ZIP..."
-    $zipName = Join-Path $releaseFolder "$appName-windows-x86-64.zip"
+    $zipName = Join-Path $releaseFolder "$appName-windows-x$bit.zip"
     if (Test-Path $zipName) { Remove-Item $zipName -Force }
 
     $releaseZip = [System.IO.Compression.ZipFile]::Open($zipName, "Create")
     Get-ChildItem $folder -Recurse -File | ForEach-Object {
-        $zipEntryName = $_.Name
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($releaseZip, $_.FullName, $zipEntryName) | Out-Null
-        $rel = [System.IO.Path]::GetRelativePath($buildFolder, $_.FullName) -replace '\\','/'
-        Write-Host "[SUCCESS] Added build/$rel to ZIP"
+        $full = $_.FullName
+        $buildFull = [System.IO.Path]::GetFullPath($buildFolder)
+
+        if ($full.StartsWith($buildFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relPath = $full.Substring($buildFull.Length).TrimStart('\','/')
+        } else {
+            $relPath = $_.Name
+        }
+
+        $zipEntryName = $relPath -replace '\\','/'
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($releaseZip, $_.FullName, $_) | Out-Null
+        Write-Host "[SUCCESS] Added build/$zipEntryName to ZIP"
     }
     $releaseZip.Dispose()
     Write-Host "[SUCCESS] Created Windows release ZIP: $zipName"
-    Write-Host "[SUCCESS] Finished Windows build."
+    Write-Host "[INFO] Finished Windows ZIP Build."
 } else {
 }
 
@@ -167,14 +179,11 @@ if ($buildLinux) {
     }
 
     # Copy AppImage to release folder (treat as standalone executable like love.exe)
-    Copy-Item $linuxBinary -Destination $filePath -Force
-    Write-Host "[INFO] Copied $appName.AppImage to $releaseFolder"
+    Copy-Item $binaries["linux"] -Destination $filePath -Force
+    Write-Host "[SUCCESS] Copied $appName.AppImage to $releaseFolder"
 
     # Append game.love to the AppImage (in-place, no ZIP)
-    $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
-    $gameBytes = [System.IO.File]::ReadAllBytes($loveZip)
-    [System.IO.File]::WriteAllBytes($appImageDest, $fileBytes + $gameBytes)
-    Write-Host "[SUCCESS] Appended $appName.love to $filePath"
+    appendGameToFile $filePath $releaseFolder "$appName.AppImage"
 
     # Try to set executable bit on Linux only
     if ($IsLinux)  {
@@ -183,5 +192,5 @@ if ($buildLinux) {
         }
     }
 
-    Write-Host "[SUCCESS] Finished Linux build."
+    Write-Host "[INFO] Finished Linux build."
 }

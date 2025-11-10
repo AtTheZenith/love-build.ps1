@@ -1,4 +1,4 @@
-# Version 1.1.0
+# Version 1.2.0
 
 # -------------------
 # Configuration
@@ -15,6 +15,8 @@ $love2dVersion = "11.5"
 $bit = "64"
 $buildWindows = $true
 $buildLinux = $true
+$autoRun = $true
+$debug = $false
 
 # Windows specific files required for build
 $windowsRequiredFiles = @(
@@ -30,8 +32,36 @@ $binaries = @{
     "linux"   = Join-Path $basePath "linux.AppImage"
 }
 
+# -------------------
+# Fetch Parameters
+# -------------------
+# r for run (autorun), b for build, d for debug
+foreach ($arg in $args) {
+    if ($arg -like "-*") {
+        $arg = $arg -replace '-', ''
+        if ("r" -in $arg.ToCharArray()) { $autoRun = $true }
+        if ("d" -in $arg.ToCharArray()) { $debug = $true }
+
+        if ("w" -in $arg.ToCharArray()) { $buildWindows = $true; $buildLinux = $false }
+        elseif ("l" -in $arg.ToCharArray()) { $buildWindows = $false; $buildLinux = $true }
+        elseif ("b" -in $arg.ToCharArray()) { $buildWindows = $true; $buildLinux = $true }
+        else { $buildWindows = $false; $buildLinux = $false }
+    }
+}
+
+# -------------------
+# Info
+# -------------------
 Write-Host "[INFO] Starting build for LOVE version $love2dVersion ($bit-bit)"
-Write-Host "[INFO] Windows: $buildWindows, Linux: $buildLinux"
+switch ("$buildWindows$buildLinux") {
+    "TrueTrue"   { Write-Host "[INFO] Building for Windows and Linux." }
+    "TrueFalse"  { Write-Host "[INFO] Building for Windows only." }
+    "FalseTrue"  { Write-Host "[INFO] Building for Linux only." }
+    default      { Write-Host "[INFO] Building for none." }
+}
+
+Write-Host "[INFO] Autorun is $($autoRun ? 'enabled' : 'disabled')."
+Write-Host "[INFO] Debug mode is $($debug ? 'enabled' : 'disabled')."
 
 # -------------------
 # Helper Functions
@@ -79,6 +109,13 @@ foreach ($file in $require) {
 }
 $zip.Dispose()
 Write-Host "[SUCCESS] Created game.love archive."
+
+# Autorun
+if ($autoRun) {
+    Write-Host "[INFO] Running $appName.love with LOVE2D... (Debug: $debug)"
+    $exe = "$($binaries['windows'])\love$($debug ? 'c' : '').exe"
+    & $exe $loveZip
+}
 
 # -------------------
 # Build Windows
@@ -153,7 +190,6 @@ if ($buildWindows) {
     $releaseZip.Dispose()
     Write-Host "[SUCCESS] Created Windows release ZIP: $zipName"
     Write-Host "[INFO] Finished Windows ZIP Build."
-} else {
 }
 
 # -------------------

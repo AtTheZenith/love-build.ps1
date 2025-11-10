@@ -1,4 +1,4 @@
-# Version 1.2.0
+# Version 1.2.1
 
 # -------------------
 # Configuration
@@ -39,8 +39,8 @@ $binaries = @{
 foreach ($arg in $args) {
     if ($arg -like "-*") {
         $arg = $arg -replace '-', ''
-        if ("r" -in $arg.ToCharArray()) { $autoRun = $true }
-        if ("d" -in $arg.ToCharArray()) { $debug = $true }
+        $autoRun = "r" -in $arg.ToCharArray() ? $true : $false
+        $debug = "d" -in $arg.ToCharArray() ? $true : $false
 
         if ("w" -in $arg.ToCharArray()) { $buildWindows = $true; $buildLinux = $false }
         elseif ("l" -in $arg.ToCharArray()) { $buildWindows = $false; $buildLinux = $true }

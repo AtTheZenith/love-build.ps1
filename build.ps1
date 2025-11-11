@@ -1,10 +1,11 @@
-# Version 1.2.1
+# Version 1.3.0
 
 # -------------------
 # Configuration
 # -------------------
 $appName = "game"
-$require = @("main.lua")
+$requireFiles = @("main.lua")
+$requireFolders = @("src")
 
 $buildFolder = "build"
 $versionsFolder = Join-Path $buildFolder "version"
@@ -83,6 +84,11 @@ function appendGameToFile($filePath, $outputFolder, $name) {
 # -------------------
 # Prepare Directories
 # -------------------
+$versionsFolder = ($versionsFolder -replace '\\','/').TrimEnd('/')
+$releaseFolder  = ($releaseFolder  -replace '\\','/').TrimEnd('/')
+$loveZip        = ($loveZip        -replace '\\','/').TrimEnd('/')
+
+
 foreach ($folder in @($buildFolder, $versionsFolder, $releaseFolder)) {
     if (!(Test-Path $folder)) {
         New-Item -ItemType Directory -Path $folder | Out-Null
@@ -98,13 +104,27 @@ if (Test-Path $loveZip) { Remove-Item $loveZip }
 Add-Type -AssemblyName "System.IO.Compression.FileSystem"
 $zip = [System.IO.Compression.ZipFile]::Open($loveZip, 'Create')
 
-foreach ($file in $require) {
+foreach ($file in $requireFiles) {
     if (Test-Path $file) {
         $zipEntryName = ($file -replace '\\', '/') -replace '^\./', ''
         [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file, $zipEntryName) | Out-Null
         Write-Host "[INFO] Added $file to $loveZip"
     } else {
         Write-Warning "[WARN] Required file not found: $file"
+    }
+}
+
+foreach ($folder in $requireFolders) {
+    if (Test-Path $folder) {
+        Get-ChildItem -Path $folder -Recurse -File | ForEach-Object {
+            $relative = [System.IO.Path]::GetRelativePath((Get-Location), $_.FullName)
+            $zipEntryName = ($relative -replace '\\', '/') -replace '^\./', ''
+
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_, $zipEntryName) | Out-Null
+            Write-Host "[INFO] Added $zipEntryName to $loveZip"
+        }
+    } else {
+        Write-Warning "[WARN] Required folder not found: $folder"
     }
 }
 $zip.Dispose()
@@ -174,18 +194,9 @@ if ($buildWindows) {
 
     $releaseZip = [System.IO.Compression.ZipFile]::Open($zipName, "Create")
     Get-ChildItem $folder -Recurse -File | ForEach-Object {
-        $full = $_.FullName
-        $buildFull = [System.IO.Path]::GetFullPath($buildFolder)
 
-        if ($full.StartsWith($buildFull, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $relPath = $full.Substring($buildFull.Length).TrimStart('\','/')
-        } else {
-            $relPath = $_.Name
-        }
-
-        $zipEntryName = $relPath -replace '\\','/'
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($releaseZip, $_.FullName, $_) | Out-Null
-        Write-Host "[SUCCESS] Added build/$zipEntryName to ZIP"
+        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($releaseZip, $_.FullName, $_.Name) | Out-Null
+        Write-Host "[SUCCESS] Added $($_.Name) to ZIP"
     }
     $releaseZip.Dispose()
     Write-Host "[SUCCESS] Created Windows release ZIP: $zipName"

@@ -1,6 +1,6 @@
 <div align="center">
 
-# <img src="https://love2d.org/style/logo.png" alt="LÖVE2D" width="74" height="58" /> love-build
+# <img src="https://love2d.org/style/logo.png" alt="LÖVE2D" width="74" height="58" /> love-build.ps1
 
 </div>
 

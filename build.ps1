@@ -52,7 +52,7 @@ foreach ($arg in $args) {
 # -------------------
 # Info
 # -------------------
-Write-Host "[INFO] Starting build for LOVE version $loveVersion ($bit-bit)"
+Write-Host "[INFO] Starting build for LOVE version $loveVersion"
 Write-Host "[INFO] Setup is $($setup ? 'enabled' : 'disabled')."
 switch ("$buildWindows$buildLinux") {
     "TrueTrue"   { Write-Host "[INFO] Building for Windows and Linux." }

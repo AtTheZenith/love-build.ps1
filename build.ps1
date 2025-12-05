@@ -45,7 +45,6 @@ foreach ($arg in $args) {
         if ("w" -in $chars) { $buildWindows = $true; $buildLinux = $false }
         elseif ("l" -in $chars) { $buildWindows = $false; $buildLinux = $true }
         elseif ("b" -in $chars) { $buildWindows = $true; $buildLinux = $true }
-        else { $buildWindows = $false; $buildLinux = $false }
     }
 }
 

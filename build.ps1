@@ -182,7 +182,6 @@ if ($setup) {
 
     Write-Host "[INFO] Renaming $expectedPath to $($binaries["linux"])"
     Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
-    Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
     Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["linux"])"
 }
 

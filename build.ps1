@@ -1,4 +1,5 @@
 # Version 1.4.1
+# Version 1.4.1
 
 # -------------------
 # Configuration
@@ -29,17 +30,19 @@ $basePath = Join-Path $versionsFolder "$loveVersion"
 $binaries = @{
     "win32" = Join-Path $basePath "win32"
     "win64" = Join-Path $basePath "win64"
-    "linux" = Join-Path $basePath "linux.AppImage"
+    "linux" = Join-Path $basePath "linux.AppImage" # NO 32-BIT VERSION
 }
 
 # -------------------
 # Fetch Parameters
 # -------------------
 # b for build, d for debug, s for setup
+# b for build, d for debug, s for setup
 foreach ($arg in $args) {
     if ($arg -like "-*") {
         $arg = $arg -replace '-', ''
         $chars = $arg.ToCharArray()
+        $setup = "s" -in $chars
         $setup = "s" -in $chars
 
         if ("w" -in $chars) { $buildWindows = $true; $buildLinux = $false }
@@ -103,15 +106,18 @@ if (-not $setup) {
     # https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip as reference
     if ($buildWindows) {
         # 1. Check Windows folder i.e. $binaries["win$bit"]
+        # 1. Check Windows folder i.e. $binaries["win$bit"]
         # 2. Check Windows files and enable setup flag if missing any files
-        if (!(Test-Path $binaries["win$bit"])) {
-            $setup = $true
-        } else {
-            foreach ($file in $windowsRequiredFiles) {
-                if (!(Test-Path (Join-Path $binaries["win$bit"] $file))) {
-                    $setup = $true
-                    Write-Host "[WARNING] Missing win$bit files, installing..."
-                    break
+        foreach ($bit in @("32", "64")) {
+            if (!(Test-Path $binaries["win$bit"])) {
+                $setup = $true
+            } else {
+                foreach ($file in $windowsRequiredFiles) {
+                    if (!(Test-Path (Join-Path $binaries["win$bit"] $file))) {
+                        $setup = $true
+                        Write-Host "[WARNING] Missing win$bit files, installing..."
+                        break
+                    }
                 }
             }
         }
@@ -137,12 +143,17 @@ if ($setup) {
         Remove-Item -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue
     }
     New-Item -ItemType Directory -Path $basePath | Out-Null
+    if (Test-Path $basePath) {
+        Remove-Item -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -ItemType Directory -Path $basePath | Out-Null
     Write-Host "[INFO] Created folder: $basePath"
 
     # Windows
     # https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip as reference
     # 1. Download
     # 2. Extract
+    # 3. Rename folder to $binaries["win$bit"]
     # 3. Rename folder to $binaries["win$bit"]
     foreach ($bit in @("32", "64")) {
         $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-win$bit.zip"
@@ -155,9 +166,11 @@ if ($setup) {
 
         Write-Host "[INFO] Extracting $zipPath to $basePath"
         Expand-Archive -Path $zipPath -DestinationPath $basePath -Force
+        Expand-Archive -Path $zipPath -DestinationPath $basePath -Force
         Write-Host "[SUCCESS] Extracted $zipPath to $basePath"
 
         Write-Host "[INFO] Renaming $expectedPath to $($binaries["win$bit"])"
+        Move-Item -Path $expectedPath -Destination $binaries["win$bit"] -Force
         Move-Item -Path $expectedPath -Destination $binaries["win$bit"] -Force
         Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["win$bit"])"
     }
@@ -175,6 +188,7 @@ if ($setup) {
     Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
 
     Write-Host "[INFO] Renaming $expectedPath to $($binaries["linux"])"
+    Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
     Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
     Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["linux"])"
 }
@@ -226,6 +240,7 @@ if ($buildWindows) {
         if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
         New-Item -ItemType Directory -Path $folder | Out-Null
         Write-Host "[INFO] Cleared Previous win$bit builds."
+        Write-Host "[INFO] Cleared Previous win$bit builds."
 
         # Copy DLLs and support files
         Get-ChildItem $binaries["win$bit"] -Exclude "*.exe" -File -Recurse | ForEach-Object {
@@ -248,6 +263,7 @@ if ($buildWindows) {
 
         # Create release ZIP
         Write-Host "[INFO] Creating win$bit release ZIP..."
+        Write-Host "[INFO] Creating win$bit release ZIP..."
         $zipName = Join-Path $releaseFolder "$appName-win$bit.zip"
         if (Test-Path $zipName) { Remove-Item $zipName -Force }
 
@@ -258,6 +274,7 @@ if ($buildWindows) {
             Write-Host "[SUCCESS] Added $($_.Name) to ZIP"
         }
         $releaseZip.Dispose()
+        Write-Host "[SUCCESS] Created win$bit release ZIP: $zipName"
         Write-Host "[SUCCESS] Created win$bit release ZIP: $zipName"
     }
 }

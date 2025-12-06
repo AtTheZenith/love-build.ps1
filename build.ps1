@@ -1,4 +1,10 @@
-# Version 1.4.2
+# Version 1.4.3
+
+if ($PSVersionTable.PSVersion.Major -ne 7) {
+    Write-Warning "PowerShell 7 is required to run this script. Please update your PowerShell version."
+    exit 1
+}
+
 
 # -------------------
 # Configuration
@@ -13,7 +19,7 @@ $releaseFolder = Join-Path $buildFolder "release"
 $loveZip = Join-Path $releaseFolder "${appName}.love"
 
 $loveVersion = "11.5"
-$setup = $false
+$setup = $false # LEAVE FALSE, use ./build.ps1 -s to set up.
 $buildWindows = $true
 $buildLinux = $true
 
@@ -35,16 +41,14 @@ $binaries = @{
 # -------------------
 # Fetch Parameters
 # -------------------
-# b for build, d for debug, s for setup
+# b for build, s for setup, w for windows, l for linux
 foreach ($arg in $args) {
     if ($arg -like "-*") {
         $arg = $arg -replace '-', ''
         $chars = $arg.ToCharArray()
         $setup = "s" -in $chars
-
-        if ("w" -in $chars) { $buildWindows = $true; $buildLinux = $false }
-        elseif ("l" -in $chars) { $buildWindows = $false; $buildLinux = $true }
-        elseif ("b" -in $chars) { $buildWindows = $true; $buildLinux = $true }
+        $buildWindows = ("w" -in $chars) -or ("b" -in $chars)
+        $buildLinux = ("l" -in $chars) -or ("b" -in $chars)
     }
 }
 
@@ -63,18 +67,60 @@ switch ("$buildWindows$buildLinux") {
 # -------------------
 # Helper Functions
 # -------------------
+Add-Type -AssemblyName "System.IO.Compression.FileSystem"
 function appendGameToFile($filePath, $outputFolder, $name) {
-    # Debug info
-    # Write-Host "$filePath, $releaseFolder, $name"
-
     $outPath = Join-Path $outputFolder "$name"
     Write-Host "[INFO] Processing $outPath"
 
-    $fileBytes = [System.IO.File]::ReadAllBytes($filePath)
-    $gameBytes = [System.IO.File]::ReadAllBytes($loveZip)
-    [System.IO.File]::WriteAllBytes($outPath, $fileBytes + $gameBytes)
+    try {
+        $outputStream = [System.IO.File]::Open($outPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+
+        $fileStream = [System.IO.File]::OpenRead($filePath)
+        $fileStream.CopyTo($outputStream)
+        $fileStream.Dispose()
+
+        $gameStream = [System.IO.File]::OpenRead($loveZip)
+        $gameStream.CopyTo($outputStream)
+        $gameStream.Dispose()
+
+        $outputStream.Dispose()
+    } catch {
+        Write-Error "Failed to append files: $($_.Exception.Message)"
+        return
+    }
 
     Write-Host "[SUCCESS] $appName.love appended to $outPath"
+}
+
+function createZIPFrom($filesToInclude, $foldersToInclude, $zipFilePath) {
+    $zip = [System.IO.Compression.ZipFile]::Open($zipFilePath, 'Create')
+    if ($null -eq $filesToInclude) { $filesToInclude = @() }
+    if ($null -eq $foldersToInclude) { $foldersToInclude = @() }
+
+    foreach ($file in $filesToInclude) {
+        if (Test-Path $file) {
+            $zipEntryName = ($file -replace '\\', '/') -replace '^\./', ''
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file, $zipEntryName) | Out-Null
+            Write-Host "[INFO] Added $file to $zipFilePath"
+        } else {
+            Write-Warning "[WARN] File not found: $file"
+        }
+    }
+
+    foreach ($folder in $foldersToInclude) {
+        if (Test-Path $folder) {
+            Get-ChildItem -Path $folder -Recurse -File | ForEach-Object {
+                $relative = [System.IO.Path]::GetRelativePath((Get-Location), $_.FullName)
+                $zipEntryName = ($relative -replace '\\', '/') -replace '^\./', ''
+
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_, $zipEntryName) | Out-Null
+                Write-Host "[INFO] Added $zipEntryName to $zipFilePath"
+            }
+        } else {
+            Write-Warning "[WARN] Folder not found: $folder"
+        }
+    }
+    $zip.Dispose()
 }
 
 # -------------------
@@ -93,7 +139,7 @@ foreach ($folder in @($buildFolder, $versionsFolder, $releaseFolder)) {
 }
 
 if (-not $setup) {
-    # Check if version's folder exists, i.e. $versionFolder + $loveVersion
+    # Check if version's folder exists, i.e. $versionsFolder + $loveVersion
     if (!(Test-Path (Join-Path $versionsFolder $loveVersion))) {
         $setup = $true
     }
@@ -101,16 +147,16 @@ if (-not $setup) {
     # Check Windows build integrity
     # https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip as reference
     if ($buildWindows) {
-        # 1. Check Windows folder i.e. $binaries["win$bit"]
+        # 1. Check Windows folder i.e. $binaries["win$arch"]
         # 2. Check Windows files and enable setup flag if missing any files
-        foreach ($bit in @("32", "64")) {
-            if (!(Test-Path $binaries["win$bit"])) {
+        foreach ($arch in @("32", "64")) {
+            if (!(Test-Path $binaries["win$arch"])) {
                 $setup = $true
             } else {
                 foreach ($file in $windowsRequiredFiles) {
-                    if (!(Test-Path (Join-Path $binaries["win$bit"] $file))) {
+                    if (!(Test-Path (Join-Path $binaries["win$arch"] $file))) {
                         $setup = $true
-                        Write-Host "[WARNING] Missing win$bit files, installing..."
+                        Write-Host "[WARNING] Missing win$arch files, installing..."
                         break
                     }
                 }
@@ -138,33 +184,34 @@ if ($setup) {
         Remove-Item -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue
     }
     New-Item -ItemType Directory -Path $basePath | Out-Null
-    if (Test-Path $basePath) {
-        Remove-Item -Path $basePath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    New-Item -ItemType Directory -Path $basePath | Out-Null
     Write-Host "[INFO] Created folder: $basePath"
 
     # Windows
     # https://github.com/love2d/love/releases/download/11.5/love-11.5-win64.zip as reference
     # 1. Download
     # 2. Extract
-    # 3. Rename folder to $binaries["win$bit"]
-    foreach ($bit in @("32", "64")) {
-        $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-win$bit.zip"
-        $zipPath = Join-Path $basePath "love-$loveVersion-win$bit.zip"
-        $expectedPath = Join-Path $basePath "love-$loveVersion-win$bit"
+    # 3. Rename folder to $binaries["win$arch"]
+    foreach ($arch in @("32", "64")) {
+        $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-win$arch.zip"
+        $zipPath = Join-Path $basePath "love-$loveVersion-win$arch.zip"
+        $expectedPath = Join-Path $basePath "love-$loveVersion-win$arch"
 
         Write-Host "[INFO] Downloading $url"
-        Invoke-WebRequest -Uri $url -OutFile $zipPath
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $zipPath -ErrorAction Stop
+        } catch {
+            Write-Error "Failed to download $($url): $($_.Exception.Message)"
+            exit 1
+        }
         Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
 
         Write-Host "[INFO] Extracting $zipPath to $basePath"
         Expand-Archive -Path $zipPath -DestinationPath $basePath -Force
         Write-Host "[SUCCESS] Extracted $zipPath to $basePath"
 
-        Write-Host "[INFO] Renaming $expectedPath to $($binaries["win$bit"])"
-        Move-Item -Path $expectedPath -Destination $binaries["win$bit"] -Force
-        Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["win$bit"])"
+        Write-Host "[INFO] Renaming $expectedPath to $($binaries["win$arch"])"
+        Move-Item -Path $expectedPath -Destination $binaries["win$arch"] -Force
+        Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["win$arch"])"
     }
 
     # Linux
@@ -176,7 +223,12 @@ if ($setup) {
     $expectedPath = Join-Path $basePath "love-$loveVersion-x86_64.AppImage"
 
     Write-Host "[INFO] Downloading $url"
-    Invoke-WebRequest -Uri $url -OutFile $zipPath
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $zipPath -ErrorAction Stop
+    } catch {
+        Write-Error "Failed to download $($url): $($_.Exception.Message)"
+        exit 1
+    }
     Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
 
     Write-Host "[INFO] Renaming $expectedPath to $($binaries["linux"])"
@@ -189,34 +241,9 @@ if ($setup) {
 # -------------------
 if (Test-Path $loveZip) { Remove-Item $loveZip }
 
-Add-Type -AssemblyName "System.IO.Compression.FileSystem"
-$zip = [System.IO.Compression.ZipFile]::Open($loveZip, 'Create')
+createZIPFrom $requireFiles $requireFolders $loveZip
 
-foreach ($file in $requireFiles) {
-    if (Test-Path $file) {
-        $zipEntryName = ($file -replace '\\', '/') -replace '^\./', ''
-        [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file, $zipEntryName) | Out-Null
-        Write-Host "[INFO] Added $file to $loveZip"
-    } else {
-        Write-Warning "[WARN] Required file not found: $file"
-    }
-}
-
-foreach ($folder in $requireFolders) {
-    if (Test-Path $folder) {
-        Get-ChildItem -Path $folder -Recurse -File | ForEach-Object {
-            $relative = [System.IO.Path]::GetRelativePath((Get-Location), $_.FullName)
-            $zipEntryName = ($relative -replace '\\', '/') -replace '^\./', ''
-
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $_, $zipEntryName) | Out-Null
-            Write-Host "[INFO] Added $zipEntryName to $loveZip"
-        }
-    } else {
-        Write-Warning "[WARN] Required folder not found: $folder"
-    }
-}
-$zip.Dispose()
-Write-Host "[SUCCESS] Created game.love archive."
+Write-Host "[SUCCESS] Created $appName.love file."
 
 # -------------------
 # Build Windows
@@ -224,16 +251,16 @@ Write-Host "[SUCCESS] Created game.love archive."
 if ($buildWindows) {
     Write-Host "[INFO] Starting Windows build..."
 
-    foreach ($bit in @("32", "64")) {
-        Write-Host "[INFO] Building for win$bit..."
+    foreach ($arch in @("32", "64")) {
+        Write-Host "[INFO] Building for win$arch..."
         # Prepare release folder for Windows
-        $folder = Join-Path $releaseFolder "win$bit"
+        $folder = Join-Path $releaseFolder "win$arch"
         if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
         New-Item -ItemType Directory -Path $folder | Out-Null
-        Write-Host "[INFO] Cleared previous win$bit builds."
+        Write-Host "[INFO] Cleared previous win$arch builds."
 
         # Copy DLLs and support files
-        Get-ChildItem $binaries["win$bit"] -Exclude "*.exe" -File -Recurse | ForEach-Object {
+        Get-ChildItem $binaries["win$arch"] -Exclude "*.exe" -File -Recurse | ForEach-Object {
             Copy-Item $_.FullName -Destination $folder -Force
             Write-Host "[SUCCESS] Copied $($_.Name) to release folder."
         }
@@ -241,29 +268,24 @@ if ($buildWindows) {
         # Append game.love to executables
         $exeFiles = @("love.exe", "lovec.exe")
         foreach ($exe in $exeFiles) {
-            $exePath = Join-Path $binaries["win$bit"] $exe
+            $exePath = Join-Path $binaries["win$arch"] $exe
             if (Test-Path $exePath) {
                 $outputName = if ($exe -eq "lovec.exe") { "$appName-debug.exe" } else { "$appName.exe" }
                 appendGameToFile $exePath $folder $outputName
             } else {
-                Write-Warning "[WARN] $exe not found in $($binaries["win$bit"]), skipping."
+                Write-Warning "[WARN] $exe not found in $($binaries["win$arch"]), skipping."
             }
         }
-        Write-Host "[INFO] Finished win$bit build."
+        Write-Host "[INFO] Finished win$arch build."
 
         # Create release ZIP
-        Write-Host "[INFO] Creating win$bit release ZIP..."
-        $zipName = Join-Path $releaseFolder "$appName-win$bit.zip"
+        Write-Host "[INFO] Creating win$arch release ZIP..."
+        $zipName = Join-Path $releaseFolder "$appName-win$arch.zip"
         if (Test-Path $zipName) { Remove-Item $zipName -Force }
 
-        $releaseZip = [System.IO.Compression.ZipFile]::Open($zipName, "Create")
-        Get-ChildItem $folder -Recurse -File | ForEach-Object {
-
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($releaseZip, $_.FullName, $_.Name) | Out-Null
-            Write-Host "[SUCCESS] Added $($_.Name) to ZIP"
-        }
-        $releaseZip.Dispose()
-        Write-Host "[SUCCESS] Created win$bit release ZIP: $zipName"
+        # Leave first argument empty 
+        createZIPFrom $null $folder $zipName
+        Write-Host "[SUCCESS] Created win$arch release ZIP: $zipName"
     }
 }
 
@@ -274,23 +296,26 @@ if ($buildLinux) {
     Write-Host "[INFO] Starting Linux build..."
 
     # Clear previous Linux AppImage
-    $filePath = Join-Path $releaseFolder "$appName.AppImage"
-    if (Test-Path $filePath) {
-        Remove-Item $filePath -Force 
+    $finalAppImagePath = Join-Path $releaseFolder "$appName.AppImage"
+    if (Test-Path $finalAppImagePath) {
+        Remove-Item $finalAppImagePath -Force 
         Write-Host "[INFO] Cleared previous Linux build."
     }
 
-    # Copy AppImage to release folder (treat as standalone executable like love.exe)
-    Copy-Item $binaries["linux"] -Destination $filePath -Force
-    Write-Host "[SUCCESS] Copied $appName.AppImage to $releaseFolder"
+    $tempAppImagePath = Join-Path $releaseFolder "$appName.AppImage.tmp"
+    if (Test-Path $tempAppImagePath) {
+        Remove-Item $tempAppImagePath -Force
+    }
 
-    # Append game.love to the AppImage (in-place, no ZIP)
-    appendGameToFile $filePath $releaseFolder "$appName.AppImage"
+    Copy-Item $binaries["linux"] -Destination $tempAppImagePath -Force
+
+    appendGameToFile $tempAppImagePath $releaseFolder "$appName.AppImage"
+    Remove-Item $tempAppImagePath -Force
 
     # Try to set executable bit on Linux only
     if ($IsLinux)  {
         if (Get-Command chmod -ErrorAction SilentlyContinue) {
-            & chmod +x $appImageDest
+            & chmod +x $finalAppImagePath
         }
     }
 

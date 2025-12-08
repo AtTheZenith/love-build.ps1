@@ -1,10 +1,8 @@
-# Version 1.4.3
-
+# Version 1.4.4
 if ($PSVersionTable.PSVersion.Major -ne 7) {
     Write-Warning "PowerShell 7 is required to run this script. Please update your PowerShell version."
     exit 1
 }
-
 
 # -------------------
 # Configuration
@@ -19,7 +17,7 @@ $releaseFolder = Join-Path $buildFolder "release"
 $loveZip = Join-Path $releaseFolder "${appName}.love"
 
 $loveVersion = "11.5"
-$setup = $false # LEAVE FALSE, use ./build.ps1 -s to set up.
+$setup = $false # LEAVE FALSE, the script will auto-check for necessary files.
 $buildWindows = $true
 $buildLinux = $true
 
@@ -42,15 +40,15 @@ $binaries = @{
 # Fetch Parameters
 # -------------------
 # b for build, s for setup, w for windows, l for linux
-foreach ($arg in $args) {
-    if ($arg -like "-*") {
-        $arg = $arg -replace '-', ''
-        $chars = $arg.ToCharArray()
-        $setup = "s" -in $chars
-        $buildWindows = ("w" -in $chars) -or ("b" -in $chars)
-        $buildLinux = ("l" -in $chars) -or ("b" -in $chars)
-    }
-}
+# foreach ($arg in $args) {
+#     if ($arg -like "-*") {
+#         $arg = $arg -replace '-', ''
+#         $chars = $arg.ToCharArray()
+#         $setup = "s" -in $chars
+#         $buildWindows = ("w" -in $chars) -or ("b" -in $chars)
+#         $buildLinux = ("l" -in $chars) -or ("b" -in $chars)
+#     }
+# }
 
 # -------------------
 # Info
@@ -191,10 +189,39 @@ if ($setup) {
     # 1. Download
     # 2. Extract
     # 3. Rename folder to $binaries["win$arch"]
-    foreach ($arch in @("32", "64")) {
-        $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-win$arch.zip"
-        $zipPath = Join-Path $basePath "love-$loveVersion-win$arch.zip"
-        $expectedPath = Join-Path $basePath "love-$loveVersion-win$arch"
+    if ($buildWindows) {
+        foreach ($arch in @("32", "64")) {
+            $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-win$arch.zip"
+            $zipPath = Join-Path $basePath "love-$loveVersion-win$arch.zip"
+            $expectedPath = Join-Path $basePath "love-$loveVersion-win$arch"
+
+            Write-Host "[INFO] Downloading $url"
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $zipPath -ErrorAction Stop
+            } catch {
+                Write-Error "Failed to download $($url): $($_.Exception.Message)"
+                exit 1
+            }
+            Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
+
+            Write-Host "[INFO] Extracting $zipPath to $basePath"
+            Expand-Archive -Path $zipPath -DestinationPath $basePath -Force
+            Write-Host "[SUCCESS] Extracted $zipPath to $basePath"
+
+            Write-Host "[INFO] Renaming $expectedPath to $($binaries["win$arch"])"
+            Move-Item -Path $expectedPath -Destination $binaries["win$arch"] -Force
+            Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["win$arch"])"
+        }
+    }
+
+    # Linux
+    # https://github.com/love2d/love/releases/download/11.5/love-11.5-x86_64.AppImage as reference (no 32 bit)
+    # 1. Download
+    # 2. Rename file to $binaries["linux"]
+    if ($buildLinux) {
+        $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-x86_64.AppImage"
+        $zipPath = Join-Path $basePath "love-$loveVersion-x86_64.AppImage"
+        $expectedPath = Join-Path $basePath "love-$loveVersion-x86_64.AppImage"
 
         Write-Host "[INFO] Downloading $url"
         try {
@@ -205,35 +232,10 @@ if ($setup) {
         }
         Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
 
-        Write-Host "[INFO] Extracting $zipPath to $basePath"
-        Expand-Archive -Path $zipPath -DestinationPath $basePath -Force
-        Write-Host "[SUCCESS] Extracted $zipPath to $basePath"
-
-        Write-Host "[INFO] Renaming $expectedPath to $($binaries["win$arch"])"
-        Move-Item -Path $expectedPath -Destination $binaries["win$arch"] -Force
-        Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["win$arch"])"
+        Write-Host "[INFO] Renaming $expectedPath to $($binaries["linux"])"
+        Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
+        Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["linux"])"
     }
-
-    # Linux
-    # https://github.com/love2d/love/releases/download/11.5/love-11.5-x86_64.AppImage as reference (no 32 bit)
-    # 1. Download
-    # 2. Rename file to $binaries["linux"]
-    $url = "https://github.com/love2d/love/releases/download/$loveVersion/love-$loveVersion-x86_64.AppImage"
-    $zipPath = Join-Path $basePath "love-$loveVersion-x86_64.AppImage"
-    $expectedPath = Join-Path $basePath "love-$loveVersion-x86_64.AppImage"
-
-    Write-Host "[INFO] Downloading $url"
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $zipPath -ErrorAction Stop
-    } catch {
-        Write-Error "Failed to download $($url): $($_.Exception.Message)"
-        exit 1
-    }
-    Write-Host "[SUCCESS] Downloaded $url to $zipPath" 
-
-    Write-Host "[INFO] Renaming $expectedPath to $($binaries["linux"])"
-    Move-Item -Path $expectedPath -Destination $binaries["linux"] -Force
-    Write-Host "[SUCCESS] Renamed $expectedPath to $($binaries["linux"])"
 }
 
 # -------------------
